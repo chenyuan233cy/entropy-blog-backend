@@ -1,0 +1,65 @@
+# 生产 profile：用 --spring.profiles.active=prod（或 SPRING_PROFILES_ACTIVE=prod）启用。
+#
+# 这个文件里凡是标了「必填」的项都**故意不给默认值**：没配就是起不来，
+# 而不是带着开发默认值上线。所有变量名与填写方式见 docs/环境变量清单.md。
+spring:
+  datasource:
+    # 必填。示例：jdbc:mysql://127.0.0.1:3306/qichi_blog?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+server:
+  # 后端只监听本机，公网流量一律经 Nginx；改这里之前先确认你没有把 8080 暴露出去。
+  address: ${BLOG_BIND_ADDRESS:127.0.0.1}
+  # TLS 在 Nginx 终止，客户端地址由 Nginx 用 $remote_addr 覆盖后传给后端。
+  forward-headers-strategy: none
+
+blog:
+  # 必填。必须是带域名的 https 地址，OAuth 回跳和邮件里的链接都按它拼。
+  site-url: ${BLOG_SITE_URL}
+  # 生产前端与后端同源（Nginx 反代），一般留空；前后端分域时再填，逗号分隔。
+  cors-allowed-origins: ${BLOG_CORS_ALLOWED_ORIGINS:}
+  # 只有 Nginx 用 $remote_addr 覆盖 X-Forwarded-For / X-Real-IP 时才保持 true。
+  # 如果你换成了 $proxy_add_x_forwarded_for（追加），必须改成 false，否则限流可被伪造绕过。
+  trust-forwarded-headers: ${BLOG_TRUST_FORWARDED_HEADERS:true}
+  # HTTPS 下必须 true；设成 false 会让浏览器静默丢掉会话 cookie。
+  cookie-secure: ${BLOG_COOKIE_SECURE:true}
+  jwt:
+    # 必填。至少 32 字符的随机串（openssl rand -base64 48）。
+    secret: ${BLOG_JWT_SECRET}
+  mail:
+    enabled: ${BLOG_MAIL_ENABLED:false}
+    host: ${BLOG_MAIL_HOST:}
+    port: ${BLOG_MAIL_PORT:465}
+    ssl: ${BLOG_MAIL_SSL:true}
+    starttls: ${BLOG_MAIL_STARTTLS:false}
+    username: ${BLOG_MAIL_USERNAME:}
+    password: ${BLOG_MAIL_PASSWORD:}
+    from: ${BLOG_MAIL_FROM:}
+    from-name: ${BLOG_MAIL_FROM_NAME:熵}
+  upload:
+    dir: ${BLOG_UPLOAD_DIR:/var/lib/qichi-blog/uploads}
+  oauth:
+    github-client-id: ${BLOG_GITHUB_CLIENT_ID:}
+    github-client-secret: ${BLOG_GITHUB_CLIENT_SECRET:}
+    github-redirect-uri: ${BLOG_GITHUB_REDIRECT_URI:}
+    google-client-id: ${BLOG_GOOGLE_CLIENT_ID:}
+    google-client-secret: ${BLOG_GOOGLE_CLIENT_SECRET:}
+    google-redirect-uri: ${BLOG_GOOGLE_REDIRECT_URI:}
+
+# 生产不对外暴露接口文档与 Swagger UI（SecurityConfig 里对它们的放行也就失去意义）
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.qichi.blog: INFO

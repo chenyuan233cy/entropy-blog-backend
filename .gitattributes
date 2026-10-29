@@ -1,0 +1,5 @@
+# 推送前自动脱敏（本地文件不变）
+src/main/resources/*.yml filter=sanitize
+src/main/resources/*.yaml filter=sanitize
+src/main/resources/*.properties filter=sanitize
+src/main/java/**/*.java filter=sanitize

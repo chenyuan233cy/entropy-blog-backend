@@ -1,0 +1,203 @@
+server:
+  port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/xml,application/xml,text/plain
+  error:
+    include-message: never
+    include-stacktrace: never
+  tomcat:
+    # 请求体超过 multipart 上限时，Tomcat 默认只肯「吞」2MB，剩下的直接断连接 ——
+    # 浏览器那边就变成 Failed to fetch 而不是一条明确的报错。留足余量（要比 max-request-size 大），
+    # 让超限请求也能好好收到一句「文件太大」。（前端另有一道本地大小检查，正常的超限根本传不出来。）
+    max-swallow-size: 400MB
+
+spring:
+  application:
+    name: qichi-blog
+  datasource:
+    # 生产环境请用环境变量覆盖（见 docs/环境变量清单.md + application-prod.yml），
+    # 这里的默认值只服务于本地开发。
+    url: "${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/qichi_blog?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&rewriteBatchedStatements=true}"
+    username: ${SPRING_DATASOURCE_USERNAME:}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: qichi-pool
+      maximum-pool-size: 12
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 300000
+      max-lifetime: 1500000
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 2s
+      connect-timeout: 2s
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 16
+          max-idle: 8
+          min-idle: 0
+  servlet:
+    multipart:
+      # 要罩得住最大的那种上传（「文件」页的 file-max-bytes，默认 300MB）。
+      # 这里写小了的话，超限的上传会直接被 Tomcat 掐断连接，前端只看到 "Failed to fetch"，
+      # 连一句「文件太大」都收不到。改 file-max-bytes 时这里要跟着改。
+      max-file-size: 300MB
+      max-request-size: 310MB
+  threads:
+    virtual:
+      enabled: true
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+  global-config:
+    banner: false
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+
+blog:
+  site-url: ${BLOG_SITE_URL:http://localhost:3000}
+  # 生产用环境变量覆盖（逗号分隔），前端同源走 Next rewrite 时其实用不到 CORS。
+  cors-allowed-origins:
+    - http://localhost:3000
+    - http://127.0.0.1:3000
+  # 只有反向代理会「覆盖」X-Forwarded-For / X-Real-IP 时才打开。
+  # 本地直连必须关着，否则谁都能伪造一个 X-Forwarded-For 换一个限流桶。
+  trust-forwarded-headers: ${BLOG_TRUST_FORWARDED_HEADERS:false}
+  # 会话 cookie 是否带 Secure：本地 http 必须 false，生产 https 必须 true。
+  cookie-secure: ${BLOG_COOKIE_SECURE:false}
+  # 公开注册：单作者站点默认关闭（任何人都不能自助建号）。
+  # 需要初始化第一个管理员时，临时设 BLOG_AUTH_REGISTRATION_ENABLED=true 并重启。
+  auth:
+    registration-enabled: ${BLOG_AUTH_REGISTRATION_ENABLED:false}
+  jwt:
+    # 生产必须通过环境变量覆盖；启动自检会拒绝在生产 profile 下继续使用这个开发默认值。
+    secret: ${BLOG_JWT_SECRET:}
+    issuer: qichi-blog
+    access-ttl: 15m
+    refresh-ttl: 14d
+    refresh-grace: 30s
+  mail:
+    # 注册验证码用真实 SMTP 发信。enabled 还是 false 时，注册页会直接提示「邮件服务还没配置」。
+    # 怎么拿授权码、怎么排错，见 docs/邮箱验证码配置.md
+    # 默认关：本地没配授权码时不该真去连 SMTP，否则登录/注册会报「验证码发送失败」。
+    # 要发信就显式设 BLOG_MAIL_ENABLED=true 并填账号。
+    enabled: ${BLOG_MAIL_ENABLED:false}
+    host: ${BLOG_MAIL_HOST:smtp.qq.com}
+    port: ${BLOG_MAIL_PORT:465}
+    # 465 走 SSL；587 走 STARTTLS，那就把 ssl 改成 false、starttls 改成 true
+    ssl: ${BLOG_MAIL_SSL:true}
+    starttls: ${BLOG_MAIL_STARTTLS:false}
+    # 发件邮箱（不是收件邮箱），生产用环境变量填
+    username: ${BLOG_MAIL_USERNAME:}
+    # SMTP 授权码（不是邮箱登录密码）
+    password: ${BLOG_MAIL_PASSWORD:}
+    # 发件人，留空就用 username
+    from: ${BLOG_MAIL_FROM:}
+    # 验证码邮件的发件人名称，也是邮件标题里的【…】
+    from-name: ${BLOG_MAIL_FROM_NAME:熵}
+    code-ttl: 5m
+    resend-interval: 60s
+  upload:
+    dir: ${BLOG_UPLOAD_DIR:./uploads}
+    max-bytes: 5242880
+    allowed-extensions: [png, jpg, jpeg, webp, gif]
+    # 「文件」页的上传：单文件上限。
+    # 后缀黑名单默认挡住「浏览器会以你站点身份执行」的类型 —— 上传的 .html / .svg 会挂在
+    # 你自己域名下，访客打开时里面的脚本是以「你的站点」身份运行的（能读到访客的会话）。
+    # 要放开就用环境变量覆盖，别直接删这一行。
+    file-max-bytes: 314572800
+    file-blocked-extensions: [html, htm, xhtml, shtml, svg, js, mjs, xml, xsl, swf]
+  rate-limit:
+    enabled: true
+    rules:
+      - name: auth-login
+        pattern: "POST /api/v1/auth/login"
+        limit: 10
+        window: 60s
+      - name: auth-refresh
+        pattern: "POST /api/v1/auth/refresh"
+        limit: 30
+        window: 60s
+      - name: auth-register
+        pattern: "POST /api/v1/auth/register"
+        limit: 5
+        window: 60s
+      # 密码登录的第二步：验证码试错。比登录本身再收紧一点
+      - name: auth-login-verify
+        pattern: "POST /api/v1/auth/login/verify"
+        limit: 10
+        window: 10m
+      # 重发登录验证码同样会消耗发件额度，跟注册验证码一个量级
+      - name: auth-login-code
+        pattern: "POST /api/v1/auth/login/code"
+        limit: 5
+        window: 10m
+      # 发验证码会真的消耗发件邮箱的额度，按 IP 收紧：否则别人能拿你的邮箱给任意地址发垃圾邮件。
+      # 单个邮箱另有 60 秒冷却（见 EmailCodeService）。
+      - name: email-code
+        pattern: "POST /api/v1/auth/email/code"
+        limit: 5
+        window: 10m
+      - name: email-register
+        pattern: "POST /api/v1/auth/email/register"
+        limit: 10
+        window: 10m
+      - name: comment-write
+        pattern: "POST /api/v1/comments"
+        limit: 5
+        window: 60s
+      # 点赞不需要登录，但每次都会写库、写 Redis；单独收紧，别让它变成免费的写放大入口
+      - name: post-like
+        pattern: "POST /api/v1/posts/*/like"
+        limit: 30
+        window: 60s
+      # 头像 / 导出这类会落盘的写操作
+      - name: user-write
+        pattern: "POST /api/v1/me/**"
+        limit: 30
+        window: 10m
+      - name: admin-write
+        pattern: "/api/v1/admin/**"
+        limit: 240
+        window: 60s
+      - name: public-read
+        pattern: "/api/v1/**"
+        limit: 900
+        window: 60s
+  oauth:
+    github-client-id: ${BLOG_GITHUB_CLIENT_ID:}
+    github-client-secret: ${BLOG_GITHUB_CLIENT_SECRET:}
+    # 必须和 GitHub OAuth App 里登记的 Redirect URI 一字不差（见 docs/05-GitHub登录配置.md）
+    github-redirect-uri: ${BLOG_GITHUB_REDIRECT_URI:http://localhost:3000/api/v1/auth/oauth/github/callback}
+    # Google 登录。同样要和 Google Cloud Console 里登记的「已获授权的重定向 URI」一字不差
+    google-client-id: ${BLOG_GOOGLE_CLIENT_ID:}
+    google-client-secret: ${BLOG_GOOGLE_CLIENT_SECRET:}
+    google-redirect-uri: ${BLOG_GOOGLE_REDIRECT_URI:http://localhost:3000/api/v1/auth/oauth/google/callback}
+
+logging:
+  level:
+    root: INFO
+    com.qichi.blog: DEBUG
+    com.qichi.blog.modules: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"
