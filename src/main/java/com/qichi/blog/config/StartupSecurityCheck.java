@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 启动自检：把「配置忘了改」从线上事故变成一条启动日志（生产 profile 下直接拒绝启动）。
@@ -25,9 +26,12 @@ public class StartupSecurityCheck implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(StartupSecurityCheck.class);
 
-    /** 仓库里公开的开发默认值：知道它就能伪造任何人的令牌。 */
-    private static final String DEV_JWT_SECRET = "<REDACTED>";
-    private static final String DEV_DB_PASSWORD = "<REDACTED>";
+    /** 弱密钥特征：显式的占位词，命中即视为「忘了改」。 */
+    private static final List<String> WEAK_SECRET_MARKERS = List.of(
+            "change-me", "change_me", "changeme", "example", "your-", "your_", "password", "secret");
+
+    /** 建议的最小随机长度；只告警，不阻断启动，避免误伤已有的短密钥。 */
+    private static final int RECOMMENDED_SECRET_LENGTH = 32;
 
     private final BlogProperties properties;
     private final Environment environment;
@@ -45,17 +49,22 @@ public class StartupSecurityCheck implements ApplicationRunner {
         List<String> fatal = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
-        if (DEV_JWT_SECRET.equals(properties.jwt().secret())) {
-            String message = "blog.jwt.secret 还是仓库里的开发默认值，任何人都能伪造站长令牌。"
-                    + " 生产必须设置 BLOG_JWT_SECRET（openssl rand -base64 48）。";
+        String jwtSecret = properties.jwt() == null ? null : properties.jwt().secret();
+        if (isUnset(jwtSecret) || hasWeakMarker(jwtSecret)) {
+            String message = "jwt.secret 仍是默认/占位值（为空或含 " + WEAK_SECRET_MARKERS + " 之一），任何拿到仓库的人都能伪造令牌。生产请设置 BLOG_JWT_SECRET。";
             fatal.add(message);
             warnings.add(message);
+        } else if (jwtSecret.trim().length() < RECOMMENDED_SECRET_LENGTH) {
+            warnings.add("jwt.secret 仅 " + jwtSecret.trim().length() + " 位，建议 32 位以上随机串。");
         }
 
-        if (DEV_DB_PASSWORD.equals(environment.getProperty("spring.datasource.password"))) {
-            String message = "数据库密码还是开发默认值，请设置 SPRING_DATASOURCE_PASSWORD。";
+        String dbPassword = environment.getProperty("spring.datasource.password");
+        if (isUnset(dbPassword) || hasWeakMarker(dbPassword)) {
+            String message = "数据库密码仍是默认/占位值（为空或含 " + WEAK_SECRET_MARKERS + " 之一），生产请设置 SPRING_DATASOURCE_PASSWORD。";
             fatal.add(message);
             warnings.add(message);
+        } else if (dbPassword.trim().length() < RECOMMENDED_SECRET_LENGTH / 2) {
+            warnings.add("数据库密码仅 " + dbPassword.trim().length() + " 位，建议再长一些。");
         }
 
         if (properties.upload() == null || properties.upload().fileBlockedExtensions() == null
@@ -114,4 +123,14 @@ public class StartupSecurityCheck implements ApplicationRunner {
                     + "UPDATE site_config SET config_value='false' WHERE config_key='auth.email_code_login';");
         }
     }
+
+    private static boolean isUnset(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static boolean hasWeakMarker(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return WEAK_SECRET_MARKERS.stream().anyMatch(lower::contains);
+    }
+
 }
